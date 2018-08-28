@@ -1,0 +1,54 @@
+整体思想：
+1.预处理
+（1）联合4个特征文件,删除各个样本相同的feature
+（2）Standard标准化处理 （X-X.mean)/X.std
+（3）通过pca降维至204维
+2.xgboost参数调优
+3.svm参数调优
+4.lr（不需调优）
+5.emsembal，将以上3种方法组合训练
+
+
+accuracy：
+svm accs=0.804878
+lr accs=0.780488
+xgb accs=0.707317
+svm+lr accs=0.804878
+svm+xgb accs=0.829268
+lr+xgb accs=0.829268
+svm+lr+xgb accs=0.829268
+
+
+参数调优：
+svm参数：C
+第一次：[0.001, 0.01, 0.1, 10, 50, 75, 100, 125, 150]，最优75
+第二次：list(range(40, 90, 10))，最优60
+第三次：list(range(50, 70, 2))，最优60
+
+xgboost参数
+learning_rate: 
+	第一次：[0.001, 0.01, 0.1, 0.3, 0.5],最优0.01
+	第二次：list(range(0.01, 0.1, 0.01)),最优0.07
+colsample_bytree： list(range(0.1, 1, 0.1))，最优0.7
+max_depth: list(range(1, 10))，最优3
+min_child_weight：list(range(1, 10))，最优6
+subsample：list(range(0.1, 1, 0.1))，最优0.7
+所有参数：
+max_depth=3,
+learning_rate=0.07,
+n_estimators=35,
+silent=True,
+objective="binary:logistic",
+booster='gbtree',
+gamma=0,
+min_child_weight=6,
+subsample=0.8,
+colsample_bytree=0.7,
+reg_alpha=0.1,
+seed=1000
+
+配置环境：
+python3.6
+win10
+
+
