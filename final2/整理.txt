@@ -1,26 +1,23 @@
-﻿整体思想：
+整体思想：
 1.预处理
-（1）联合4个特征文件,删除各个样本间特征值相同的feature
+（1）联合4个特征文件,删除各个样本相同的feature
 （2）Standard标准化处理 （X-X.mean)/X.std
 （3）通过pca降维至204维
 2.xgboost参数调优
 3.svm参数调优
 4.lr（不需调优）
-5.神经网络(MLPClassifier)参数调优
-6.emsembal，将以上3种方法组合训练
-
+5.emsembal，将以上3种方法组合训练
 
 
 accuracy：
 svm accs=0.804878
 lr accs=0.780488
-xgb accs=0.780488
-mlp accs=0.731707
+xgb accs=0.707317
 svm+lr accs=0.804878
 svm+xgb accs=0.829268
 lr+xgb accs=0.829268
-avm+lr+xgb accs=0.829268
-xgb+svm+mlp=0.853659
+svm+lr+xgb accs=0.829268
+
 
 参数调优：
 svm参数：C
@@ -49,18 +46,6 @@ subsample=0.8,
 colsample_bytree=0.7,
 reg_alpha=0.1,
 seed=1000
-交叉验证参数：
-nfold=5，
-xgb.callback.early_stop(1000)
-
-MLP参数调优：
-solver='sgd', 
-alpha=1e-5, 
-hidden_layer_sizes=(5, 2), 
-random_state=1, 
-learning_rate='adaptive',
-learning_rate_init=0.05,
-max_iter=1000
 
 配置环境：
 python3.6

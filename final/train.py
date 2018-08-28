@@ -1,5 +1,6 @@
 # -*- coding: UTF-8 -*-
 import numpy as np
+import pandas as pd
 from sklearn.model_selection import train_test_split
 import xgboost as xgb
 from sklearn.decomposition import PCA
@@ -7,15 +8,42 @@ import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
+from sklearn import svm
 from sklearn.model_selection import GridSearchCV
+from sklearn.neural_network import MLPClassifier
 
 
 # 特征降维
 def pca_feature(data):
-    pca = PCA(n_components=500)
+    pca = PCA(n_components=None, copy=True)
     pca_data = pca.fit_transform(data)
+    ratio = pca.explained_variance_ratio_
+    # 画主成分-方差占比曲线图
+    plt.rcParams['font.sans-serif'] = ['SimHei']
+    x = [i for i in range(len(ratio))]
+    plt.title('主成分-方差比曲线图')
+    plt.plot(x, ratio, color='blue')
+    plt.ylabel('方差的百分比')
+    plt.xlabel('主成分')
+    plt.legend()
+    plt.show()
+    # 计算前n个主成分的方差占比
+    ratio_sum = 0
+    for i in range(200):
+        ratio_sum = ratio[i] + ratio_sum
+    print(ratio_sum)
+    # 前140个主成分占总方差比的90%，前200个占99.7%
+
+    # 输出主成分占比
+    print(ratio)
+
+    # 输出降维前后的维度变化
     print(np.shape(data), np.shape(pca_data))
-    return pca_data
+    # output (204, 682324) (204, 204)
+
+    # 保存降维后的数据
+    np.savetxt("pca_204.txt", pca_data)
+    # pca_1.txt:n_components=None，默认保留204个特征
 
 
 # 数据预处理
@@ -175,12 +203,12 @@ def svm_grid_search(feature, label):
     svc = SVC(kernel='sigmoid')
     parameters = {
             # 'C': [0.001, 0.01, 0.1, 10, 50, 75, 100, 125, 150],
-            'C': list(range(50, 70, 2))
+            'C': list(range(100, 200, 10))
         }
 
     label = transport_labels(label)
     X_train, X_test, Y_train, Y_test = train_test_split(feature, label, test_size=0.2, random_state=1000)
-    clf = GridSearchCV(svc, parameters, scoring='accuracy', cv=5)
+    clf = GridSearchCV(svc, parameters, scoring='average_precision', cv=5)
     clf.fit(X_train, Y_train)
     print(clf.best_params_)
     draw_grid_scores(clf.cv_results_, [i['C'] for i in clf.cv_results_['params']], title='svm参数调优', x_name='param-C', y_name='score')
@@ -213,7 +241,7 @@ def draw_grid_scores(grid_scores, grid_names, title, x_name, y_name):
 
 def svm_train(feature, label):
     X_train, X_test, Y_train, Y_test = train_test_split(feature, label, test_size=0.2, random_state=1000)
-    svc = SVC(C=60, kernel='sigmoid')
+    svc = SVC(C=100, kernel='sigmoid')
     svc.fit(X_train, Y_train)
     y_pred = svc.predict(X_test)
     print(y_pred, Y_test)
@@ -227,7 +255,7 @@ def emsembal_train(feature, label):
     from mlxtend.classifier import EnsembleVoteClassifier,StackingClassifier
     label = transport_labels(label)
     X_train, X_test, Y_train, Y_test = train_test_split(feature, label, test_size=0.2, random_state=1000)
-    clf1 = SVC(C=60, kernel='sigmoid',probability=True)
+    clf1 = SVC(C=10, kernel='sigmoid',probability=True)
     clf2 = RandomForestClassifier(random_state=0)
     clf3 = LogisticRegression(random_state=0)
     clf4 = xgb.XGBClassifier(max_depth=8, learning_rate=0.07,
@@ -249,6 +277,91 @@ def transport_labels(labels):
         res.append(i if i==1 else 0)
     return np.array(res)
 
+
+def xgb_svm_mlp(feature, label):
+    # 将label由[-1,1]转化为[0,1]
+    for i in range(len(label)):
+        if label[i] == -1:
+            label[i] = 0
+    # Y = [0 for i in range(len(Y)) if Y[i]==-1]
+    X_train, X_test, Y_train, Y_test = train_test_split(feature, label, test_size=0.2, random_state=1000)
+    xgb_train = xgb.DMatrix(X_train, label=Y_train)
+    xgb_test = xgb.DMatrix(X_test, label=Y_test)
+    # xgboost参数
+    params = {
+        'booster': 'gbtree',
+        'silent': 1,  # 设置成1则没有运行信息输出，最好是设置为0.
+        # 'nthread':7,# cpu 线程数 默认最大
+        'eta': 0.1,  # 如同学习率
+        'min_child_weight': 3,
+        # 这个参数默认是 1，是每个叶子里面 h 的和至少是多少，对正负样本不均衡时的 0-1 分类而言
+        # ，假设 h 在 0.01 附近，min_child_weight 为 1 意味着叶子节点中最少需要包含 100 个样本。
+        # 这个参数非常影响结果，控制叶子节点中二阶导的和的最小值，该参数值越小，越容易 overfitting。
+        'max_depth': 6,  # 构建树的深度，越大越容易过拟合
+        'gamma': 0.1,  # 树的叶子节点上作进一步分区所需的最小损失减少,越大越保守，一般0.1、0.2这样子。
+        'subsample': 0.8,  # 随机采样训练样本
+        'colsample_bytree': 0.7, # 生成树时进行的列采样
+        # 'lambda': 2,  # 控制模型复杂度的权重值的L2正则化项参数，参数越大，模型越不容易过拟合。
+        'alpha': 0.1, # L1 正则项参数
+        # 'scale_pos_weight':1, #如果取值大于0的话，在类别样本不平衡的情况下有助于快速收敛。
+        'objective': 'binary:logistic',#logitraw',  # 二分类的逻辑回归问题，输出的结果为wTx
+        # 'num_class':10, # 类别数，多分类与 multisoftmax 并用
+        'seed': 1000,  # 随机种子
+        'eval_metric': 'error'
+    }
+    plst = list(params.items())
+    num_rounds = 10000  # 迭代次数
+    watchlist = [(xgb_train, 'train'), (xgb_test, 'val')]
+    # early_stopping_rounds 当设置的迭代次数较大时，early_stopping_rounds 可在一定的迭代次数内准确率没有提升就停止训练
+    # model = xgb.train(plst, xgb_train, num_rounds, watchlist, early_stopping_rounds=1000)  # , pred_margin=1
+    # 交叉验证
+    cv_model = xgb.cv(plst, xgb_train, num_rounds, metrics={"error"}, nfold=5,
+                      callbacks=[xgb.callback.print_evaluation(show_stdv=False), xgb.callback.early_stop(1000)])
+    num_boost_rounds = len(cv_model)
+    model = xgb.train(dict(plst, silent=1), xgb_train, evals=watchlist, num_boost_round=num_boost_rounds)
+    # 画特征重要性柱状图
+    # plt.rcParams['figure.figsize'] = (16.0, 8.0)
+    # importance = xgb.plot_importance(model)
+    feat_imp = pd.Series(model.get_fscore()).sort_values(ascending=False)
+    feat_imp.plot(kind='bar', title='Feature Importances')
+    plt.ylabel('Feature Importance Score')
+    plt.show()
+    # 画训练过程图
+    x1 = cv_model[['train-error-mean']]
+    x2 = cv_model[['test-error-mean']]
+    y = [i for i in range(num_boost_rounds)]
+    plt.rcParams['font.sans-serif'] = ['SimHei']
+    plt.title('训练集和验证集的错误率-迭代次数曲线图')
+    plt.plot(y, x1, color='blue', label='训练集')
+    plt.plot(y, x2, color='green', label='验证集')
+    plt.xlabel('迭代次数')
+    plt.ylabel('平均错误率')
+    plt.legend()
+    plt.show()
+
+    # 预测数据
+    y_xgb = model.predict(xgb_test, ntree_limit=model.best_ntree_limit)
+    # 输出test的平均准确率
+    print('xgb_accs=%f' % (sum(1 for i in range(len(y_xgb)) if int(y_xgb[i] >= 0.5) == Y_test[i]) / float(len(y_xgb))))
+
+    # SVM
+    clf = svm.SVC(C=100, kernel='sigmoid')
+    clf.fit(X_train, Y_train)
+    svm_y = clf.predict(X_test)
+    print('svm_accs=%f' % (sum(1 for i in range(len(svm_y)) if int(svm_y[i]) == Y_test[i]) / float(len(svm_y))))
+    y_ens = []
+
+    # MLP
+    mlp = MLPClassifier(solver='sgd', alpha=1e-5, hidden_layer_sizes=(5, 2), random_state=1, learning_rate='adaptive',
+                        learning_rate_init=0.05, max_iter=1000)
+    mlp.fit(X_train, Y_train)
+    mlp_y = mlp.predict(X_test)
+    print('mlp_accs=%f' % (sum(1 for i in range(len(mlp_y)) if int(mlp_y[i] >= 0.5) == Y_test[i]) / float(len(mlp_y))))
+    for i, j, z in zip(svm_y, y_xgb, mlp_y):
+        y_ens.append(i*0.3+j*0.5+z*0.3)
+    print('xgb_svm_mlp_ensemble_accs=%f' % (sum(1 for i in range(len(y_ens)) if int(y_ens[i] >= 0.5) == Y_test[i]) / float(len(y_ens))))
+
+
 if __name__ == '__main__':
     file1 = "dataset/dc_feas.txt"
     file2 = "dataset/dcglobal_feas.txt"
@@ -261,6 +374,7 @@ if __name__ == '__main__':
     file9 = 'dataset/max_min_pca.txt'
     file10 = 'dataset/std_pca.txt'
     file11 = 'dataset/normal_pca.txt'
+    file12 = 'dataset/pca_204.txt'
 
     # 预处理，删除过于特征
     # read_file(file1, file2,file3,file4)
@@ -287,22 +401,25 @@ if __name__ == '__main__':
     # np.savetxt("normal_pca.txt", normal_pca)
 
     # 载入3个预处理的文件（file9.file10.file11）中的一个,进行训练，file10，file11的效果更好
-    feature = np.loadtxt(file11)
+    feature1 = np.loadtxt(file9)
+    feature2 = np.loadtxt(file12)
     label = np.loadtxt("dataset/labels.txt")
-    print(np.shape(feature))
 
     # xgboost调优
-    # xgboost_grid_search(feature, label)
+    # xgboost_grid_search(feature1, label)
 
     # xgboost训练
-    train(feature, label)
+    train(feature1, label)
 
     # svmc参数调优
-    # svm_grid_search(feature, label)
+    # svm_grid_search(feature1, label)
 
     # svm训练
-    # svm_train(feature, label)
+    # svm_train(feature1, label)
 
     # ensembal训练
-    # emsembal_train(feature, label)
+    # emsembal_train(feature1, label)
+
+    # 最优结果 svm+xgb+mlp
+    # xgb_svm_mlp(feature2, label)
 
